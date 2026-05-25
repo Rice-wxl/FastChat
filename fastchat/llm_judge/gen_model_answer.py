@@ -104,75 +104,118 @@ def get_model_answers(
         choices = []
         for i in range(num_choices):
             torch.manual_seed(i)
-            conv = get_conversation_template(model_id)
+            # # --- Original FastChat conv-based prompting (broken for Llama 3.1) ---
+            # conv = get_conversation_template(model_path)
+            # turns = []
+            # for j in range(len(question["turns"])):
+            #     qs = question["turns"][j]
+            #     conv.append_message(conv.roles[0], qs)
+            #     conv.append_message(conv.roles[1], None)
+            #     prompt = conv.get_prompt()
+            #     input_ids = tokenizer([prompt]).input_ids
+            #
+            #     if temperature < 1e-4:
+            #         do_sample = False
+            #     else:
+            #         do_sample = True
+            #
+            #     # some models may error out when generating long outputs
+            #     try:
+            #         output_ids = model.generate(
+            #             torch.as_tensor(input_ids).cuda(),
+            #             do_sample=do_sample,
+            #             temperature=temperature,
+            #             max_new_tokens=max_new_token,
+            #         )
+            #         if model.config.is_encoder_decoder:
+            #             output_ids = output_ids[0]
+            #         else:
+            #             output_ids = output_ids[0][len(input_ids[0]) :]
+            #
+            #         # be consistent with the template's stop_token_ids
+            #         if conv.stop_token_ids:
+            #             stop_token_ids_index = [
+            #                 i
+            #                 for i, id in enumerate(output_ids)
+            #                 if id in conv.stop_token_ids
+            #             ]
+            #             if len(stop_token_ids_index) > 0:
+            #                 output_ids = output_ids[: stop_token_ids_index[0]]
+            #
+            #         output = tokenizer.decode(
+            #             output_ids,
+            #             spaces_between_special_tokens=False,
+            #         )
+            #         if conv.stop_str and isinstance(conv.stop_str, list):
+            #             stop_str_indices = sorted(
+            #                 [
+            #                     output.find(stop_str)
+            #                     for stop_str in conv.stop_str
+            #                     if output.find(stop_str) > 0
+            #                 ]
+            #             )
+            #             if len(stop_str_indices) > 0:
+            #                 output = output[: stop_str_indices[0]]
+            #         elif conv.stop_str and output.find(conv.stop_str) > 0:
+            #             output = output[: output.find(conv.stop_str)]
+            #
+            #         for special_token in tokenizer.special_tokens_map.values():
+            #             if isinstance(special_token, list):
+            #                 for special_tok in special_token:
+            #                     output = output.replace(special_tok, "")
+            #             else:
+            #                 output = output.replace(special_token, "")
+            #         output = output.strip()
+            #
+            #         if conv.name == "xgen" and output.startswith("Assistant:"):
+            #             output = output.replace("Assistant:", "", 1).strip()
+            #     except RuntimeError as e:
+            #         print("ERROR question ID: ", question["question_id"])
+            #         output = "ERROR"
+            #
+            #     conv.update_last_message(output)
+            #     turns.append(output)
+
+            # --- Use tokenizer.apply_chat_template for proper special tokens ---
+            messages = []
             turns = []
             for j in range(len(question["turns"])):
                 qs = question["turns"][j]
-                conv.append_message(conv.roles[0], qs)
-                conv.append_message(conv.roles[1], None)
-                prompt = conv.get_prompt()
-                input_ids = tokenizer([prompt]).input_ids
+                messages.append({"role": "user", "content": qs})
+
+                inputs = tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                    return_dict=True,
+                ).to(model.device)
+                input_length = inputs["input_ids"].shape[1]
 
                 if temperature < 1e-4:
                     do_sample = False
                 else:
                     do_sample = True
 
-                # some models may error out when generating long outputs
                 try:
                     output_ids = model.generate(
-                        torch.as_tensor(input_ids).cuda(),
+                        **inputs,
                         do_sample=do_sample,
                         temperature=temperature,
                         max_new_tokens=max_new_token,
+                        pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
                     )
-                    if model.config.is_encoder_decoder:
-                        output_ids = output_ids[0]
-                    else:
-                        output_ids = output_ids[0][len(input_ids[0]) :]
-
-                    # be consistent with the template's stop_token_ids
-                    if conv.stop_token_ids:
-                        stop_token_ids_index = [
-                            i
-                            for i, id in enumerate(output_ids)
-                            if id in conv.stop_token_ids
-                        ]
-                        if len(stop_token_ids_index) > 0:
-                            output_ids = output_ids[: stop_token_ids_index[0]]
+                    output_ids = output_ids[0][input_length:]
 
                     output = tokenizer.decode(
                         output_ids,
-                        spaces_between_special_tokens=False,
-                    )
-                    if conv.stop_str and isinstance(conv.stop_str, list):
-                        stop_str_indices = sorted(
-                            [
-                                output.find(stop_str)
-                                for stop_str in conv.stop_str
-                                if output.find(stop_str) > 0
-                            ]
-                        )
-                        if len(stop_str_indices) > 0:
-                            output = output[: stop_str_indices[0]]
-                    elif conv.stop_str and output.find(conv.stop_str) > 0:
-                        output = output[: output.find(conv.stop_str)]
+                        skip_special_tokens=True,
+                    ).strip()
 
-                    for special_token in tokenizer.special_tokens_map.values():
-                        if isinstance(special_token, list):
-                            for special_tok in special_token:
-                                output = output.replace(special_tok, "")
-                        else:
-                            output = output.replace(special_token, "")
-                    output = output.strip()
-
-                    if conv.name == "xgen" and output.startswith("Assistant:"):
-                        output = output.replace("Assistant:", "", 1).strip()
                 except RuntimeError as e:
                     print("ERROR question ID: ", question["question_id"])
                     output = "ERROR"
 
-                conv.update_last_message(output)
+                messages.append({"role": "assistant", "content": output})
                 turns.append(output)
 
             choices.append({"index": i, "turns": turns})

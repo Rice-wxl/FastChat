@@ -3,7 +3,16 @@ Usage:
 python3 show_result.py --mode [single|pairwise-baseline|pairwise-all]
 """
 import argparse
+import math
 import pandas as pd
+
+
+def sample_sd(values):
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    return math.sqrt(sum((x - mean) ** 2 for x in values) / (n - 1))
 
 
 def display_result_single(args):
@@ -26,14 +35,32 @@ def display_result_single(args):
     df_1 = df[df["turn"] == 1].groupby(["model", "turn"]).mean()
     print(df_1.sort_values(by="score", ascending=False))
 
+    if args.model_list is not None and len(args.model_list) > 1:
+        scores_1 = df_1["score"].values.tolist()
+        mean_1 = sum(scores_1) / len(scores_1)
+        sd_1 = sample_sd(scores_1)
+        print(f"\n  First turn across models: {mean_1:.4f} ± {sd_1:.4f}  (n={len(scores_1)})")
+
     if args.bench_name == "mt_bench":
         print("\n########## Second turn ##########")
         df_2 = df[df["turn"] == 2].groupby(["model", "turn"]).mean()
         print(df_2.sort_values(by="score", ascending=False))
 
+        if args.model_list is not None and len(args.model_list) > 1:
+            scores_2 = df_2["score"].values.tolist()
+            mean_2 = sum(scores_2) / len(scores_2)
+            sd_2 = sample_sd(scores_2)
+            print(f"\n  Second turn across models: {mean_2:.4f} ± {sd_2:.4f}  (n={len(scores_2)})")
+
         print("\n########## Average ##########")
         df_3 = df[["model", "score"]].groupby(["model"]).mean()
         print(df_3.sort_values(by="score", ascending=False))
+
+        if args.model_list is not None and len(args.model_list) > 1:
+            scores_3 = df_3["score"].values.tolist()
+            mean_3 = sum(scores_3) / len(scores_3)
+            sd_3 = sample_sd(scores_3)
+            print(f"\n  Average across models: {mean_3:.4f} ± {sd_3:.4f}  (n={len(scores_3)})")
 
 
 def display_result_pairwise(args):

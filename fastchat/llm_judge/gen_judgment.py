@@ -5,6 +5,7 @@ python gen_judgment.py --model-list [LIST-OF-MODEL-ID] --parallel [num-concurren
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import sys
 
 import numpy as np
 from tqdm import tqdm
@@ -207,6 +208,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--first-n", type=int, help="A debug option. Only run the first `n` judgments."
     )
+    parser.add_argument(
+        "--output-file", type=str, default=None,
+        help="Override the default judgment output file path.",
+    )
     args = parser.parse_args()
 
     question_file = f"data/{args.bench_name}/question.jsonl"
@@ -251,6 +256,9 @@ if __name__ == "__main__":
         else:
             make_match_func = make_match
             baseline_model = args.baseline_model
+
+    if args.output_file:
+        output_file = args.output_file
 
     check_data(questions, model_answers, ref_answers, models, judges)
 
@@ -298,10 +306,9 @@ if __name__ == "__main__":
     match_stat["total_num_matches"] = len(matches)
     match_stat["output_path"] = output_file
 
-    # Show match stats and prompt enter to continue
+    # Show match stats (interactive confirmation removed)
     print("Stats:")
     print(json.dumps(match_stat, indent=4))
-    input("Press Enter to confirm...")
 
     # Play matches
     if args.parallel == 1:
