@@ -93,6 +93,7 @@ OPENAI_MODEL_LIST = (
     "chatgpt-4o-latest",
     "o1-preview",
     "o1-mini",
+    "gpt-6-luna",
 )
 
 
@@ -1600,6 +1601,7 @@ class Llama31Adapter(BaseModelAdapter):
     def match(self, model_path: str):
         keywords = [
             "llama-3.1",
+            "llama-3.3",  # same chat template as 3.1
         ]
         for keyword in keywords:
             if keyword in model_path.lower():

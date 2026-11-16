@@ -413,13 +413,19 @@ def chat_completion_openai(model, conv, temperature, max_tokens, api_dict=None):
     for _ in range(API_MAX_RETRY):
         try:
             messages = conv.to_openai_api_messages()
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                n=1,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            if model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+                # reasoning models reject max_tokens and any temperature but the default; their
+                # hidden reasoning counts against the budget (2048 left math judgments empty)
+                response = client.chat.completions.create(
+                    model=model, messages=messages, n=1, max_completion_tokens=max(max_tokens, 16384))
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    n=1,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
             output = response.choices[0].message.content
             break
         except openai.OpenAIError as e:
